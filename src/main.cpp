@@ -58,6 +58,29 @@ namespace SkeletalAnimation {
             "}\n";
 }
 
+enum DisplayMode {
+    KeyboardMouseControl = 0,
+    Completion1 = 1,
+    Completion2 = 2,
+    Completion3 = 3,
+};
+
+static DisplayMode current_mode = KeyboardMouseControl;
+static bool keyboard_mouse_enabled = false;
+
+// Finger status for KeyboardMouseControl
+static bool thumb_bent = false;
+static bool index_bent = false; 
+static bool middle_bent = false;
+static bool ring_bent = false;
+static bool pinky_bent = false;
+
+// View
+static double last_x = 400, last_y = 400;
+static float camera_rotation_x = 0.0f;
+static float camera_rotation_y = 0.0f;
+static float camera_distance = -15.0f;
+
 static void error_callback(int error, const char *description) {
     fprintf(stderr, "Error: %s\n", description);
 }
@@ -65,11 +88,98 @@ static void error_callback(int error, const char *description) {
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+    // F: switch KeyboardMouseControl
+    if (key == GLFW_KEY_F && action == GLFW_PRESS) {
+        keyboard_mouse_enabled = !keyboard_mouse_enabled;
+        std::cout << "Keyboard/mouse control: " << (keyboard_mouse_enabled ? "ENABLED" : "DISABLED") << std::endl;
+    }
+
+    // Only KeyboardMouseControl is disabled, 1, 2 and 3 will display
+    if (!keyboard_mouse_enabled) {
+        if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
+            current_mode = Completion1;
+            std::cout << "Mode: Completion 1" << std::endl;
+        }
+        if (key == GLFW_KEY_2 && action == GLFW_PRESS) {
+            current_mode = Completion2;
+            std::cout << "Mode: Completion 2" << std::endl;
+        }
+        if (key == GLFW_KEY_3 && action == GLFW_PRESS) {
+            current_mode = Completion3;
+            std::cout << "Mode: Completion 3" << std::endl;
+        }
+    }
+
+    if (keyboard_mouse_enabled && action == GLFW_PRESS) {
+        switch (key) {
+            case GLFW_KEY_Q:
+                thumb_bent = !thumb_bent;
+                std::cout << "Thumb: " << (thumb_bent ? "BENT" : "STRAIGHT") << std::endl;
+                break;
+            case GLFW_KEY_W:
+                index_bent = !index_bent;
+                std::cout << "Index: " << (index_bent ? "BENT" : "STRAIGHT") << std::endl;
+                break;
+            case GLFW_KEY_E:
+                middle_bent = !middle_bent;
+                std::cout << "Middle: " << (middle_bent ? "BENT" : "STRAIGHT") << std::endl;
+                break;
+            case GLFW_KEY_R:
+                ring_bent = !ring_bent;
+                std::cout << "Ring: " << (ring_bent ? "BENT" : "STRAIGHT") << std::endl;
+                break;
+            case GLFW_KEY_T:
+                pinky_bent = !pinky_bent;
+                std::cout << "Pinky: " << (pinky_bent ? "BENT" : "STRAIGHT") << std::endl;
+                break;
+        }
+    }
+}
+
+static void cursor_position_callback(GLFWwindow *window, double xpos, double ypos) {
+    static bool first_mouse = true;
+
+    if (first_mouse) {
+        last_x = xpos;
+        last_y = ypos;
+        first_mouse = false;
+    }
+
+    float xoffset = last_x - xpos;
+    float yoffset = last_y - ypos; // reverse y axis
+    last_x = xpos;
+    last_y = ypos;
+
+    if (keyboard_mouse_enabled) {
+        float sensitivity = 0.5f;
+        xoffset *= sensitivity;
+        yoffset *= sensitivity;
+        
+        camera_rotation_y += xoffset;
+        camera_rotation_x += yoffset;
+        
+        // Limit vertical view
+        if (camera_rotation_x > 89.0f)
+            camera_rotation_x = 89.0f;
+        if (camera_rotation_x < -89.0f)
+            camera_rotation_x = -89.0f;
+    }
+}
+
+static void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
+    if (keyboard_mouse_enabled) {
+        camera_distance += yoffset * 1.0f;
+        // Limit scroll range
+        if (camera_distance > -1.0f) camera_distance = -1.0f;
+        if (camera_distance < -50.0f) camera_distance = -50.0f;
+    }
 }
 
 static void completion_1(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
 static void completion_2(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
 static void completion_3(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
+static void keyboard_mouse_control(SkeletalMesh::SkeletonModifier &modifier);
 
 int main(int argc, char *argv[]) {
     GLFWwindow *window;
@@ -94,6 +204,8 @@ int main(int argc, char *argv[]) {
     }
 
     glfwSetKeyCallback(window, key_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetScrollCallback(window, scroll_callback);
 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(0);
@@ -139,6 +251,11 @@ int main(int argc, char *argv[]) {
         // * target = metacarpals
         // * rotation axis = (1, 0, 0)
         modifier["metacarpals"] = glm::rotate(glm::identity<glm::mat4>(), metacarpals_angle, glm::fvec3(1.0, 0.0, 0.0));
+
+        if (keyboard_mouse_enabled) {
+            current_mode = KeyboardMouseControl;
+            keyboard_mouse_control(modifier);
+        } else {
 
         /**********************************************************************************\
         *
@@ -199,20 +316,36 @@ int main(int argc, char *argv[]) {
                                                           glm::fvec3(0.0, 0.0, 1.0));
 #endif // EXAMPLE_CODE
 
-// #define COMPLETION_1
-#ifdef COMPLETION_1
-        completion_1(modifier, passed_time);
-#endif // COMPLETION_1
+// // #define COMPLETION_1
+// #ifdef COMPLETION_1
+//         completion_1(modifier, passed_time);
+// #endif // COMPLETION_1
 
-// #define COMPLETION_2
-#ifdef COMPLETION_2
-        completion_2(modifier, passed_time);
-#endif // COMPLETION_2
+// // #define COMPLETION_2
+// #ifdef COMPLETION_2
+//         completion_2(modifier, passed_time);
+// #endif // COMPLETION_2
 
-#define COMPLETION_3
-#ifdef COMPLETION_3
-        completion_3(modifier, passed_time);
-#endif // COMPLETION_3
+// #define COMPLETION_3
+// #ifdef COMPLETION_3
+//         completion_3(modifier, passed_time);
+// #endif // COMPLETION_3
+
+        switch (current_mode) {
+            case Completion1:
+                completion_1(modifier, passed_time);
+                break;
+            case Completion2:
+                completion_2(modifier, passed_time);
+                break;
+            case Completion3:
+                completion_3(modifier, passed_time);
+                break;
+            default:
+                break;
+        }
+        }
+
         // --- You may edit above ---
 
         float ratio;
@@ -227,9 +360,25 @@ int main(int argc, char *argv[]) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(program);
-        glm::fmat4 mvp = glm::ortho(-12.5f * ratio, 12.5f * ratio, -5.f, 20.f, -20.f, 20.f)
+
+        glm::fmat4 mvp;
+        if (!keyboard_mouse_enabled) {
+            mvp = glm::ortho(-12.5f * ratio, 12.5f * ratio, -5.f, 20.f, -20.f, 20.f)
                          *
                          glm::lookAt(glm::fvec3(.0f, .0f, -1.f), glm::fvec3(.0f, .0f, .0f), glm::fvec3(.0f, 1.f, .0f));
+        } else {
+            glm::vec3 cameraPos;
+            cameraPos.x = camera_distance * sin(glm::radians(camera_rotation_y)) * cos(glm::radians(camera_rotation_x));
+            cameraPos.y = camera_distance * sin(glm::radians(camera_rotation_x));
+            cameraPos.z = camera_distance * cos(glm::radians(camera_rotation_y)) * cos(glm::radians(camera_rotation_x));
+            glm::mat4 view = glm::lookAt(
+                cameraPos,
+                glm::vec3(0.0f, 0.0f, 0.0f),
+                glm::vec3(0.0f, 1.0f, 0.0f)
+            );
+            mvp = glm::perspective(glm::radians(45.0f), ratio, 0.1f, 100.0f) * view;
+        }
+
         glUniformMatrix4fv(glGetUniformLocation(program, "u_mvp"), 1, GL_FALSE, (const GLfloat *) &mvp);
         glUniform1i(glGetUniformLocation(program, "u_diffuse"), SCENE_RESOURCE_SHADER_DIFFUSE_CHANNEL);
         SkeletalMesh::Scene::SkeletonTransf bonesTransf;
@@ -249,6 +398,33 @@ int main(int argc, char *argv[]) {
 
     glfwTerminate();
     exit(EXIT_SUCCESS);
+}
+
+static void finger_move_clear(SkeletalMesh::SkeletonModifier &modifier) {
+    modifier["thumb_proximal_phalange"] = glm::identity<glm::mat4>();
+    modifier["thumb_intermediate_phalange"] = glm::identity<glm::mat4>();
+    modifier["thumb_distal_phalange"] = glm::identity<glm::mat4>();
+    modifier["thumb_fingertip"] = glm::identity<glm::mat4>();
+
+    modifier["index_proximal_phalange"] = glm::identity<glm::mat4>();
+    modifier["index_intermediate_phalange"] = glm::identity<glm::mat4>();
+    modifier["index_distal_phalange"] = glm::identity<glm::mat4>();
+    modifier["index_fingertip"] = glm::identity<glm::mat4>();
+
+    modifier["middle_proximal_phalange"] = glm::identity<glm::mat4>();
+    modifier["middle_intermediate_phalange"] = glm::identity<glm::mat4>();
+    modifier["middle_distal_phalange"] = glm::identity<glm::mat4>();
+    modifier["middle_fingertip"] = glm::identity<glm::mat4>();
+    
+    modifier["ring_proximal_phalange"] = glm::identity<glm::mat4>();
+    modifier["ring_intermediate_phalange"] = glm::identity<glm::mat4>();
+    modifier["ring_distal_phalange"] = glm::identity<glm::mat4>();
+    modifier["ring_fingertip"] = glm::identity<glm::mat4>();
+
+    modifier["pinky_proximal_phalange"] = glm::identity<glm::mat4>();
+    modifier["pinky_intermediate_phalange"] = glm::identity<glm::mat4>();
+    modifier["pinky_distal_phalange"] = glm::identity<glm::mat4>();
+    modifier["pinky_fingertip"] = glm::identity<glm::mat4>();
 }
 
 static void finger_move(SkeletalMesh::SkeletonModifier &modifier,
@@ -291,14 +467,15 @@ static void finger_move(SkeletalMesh::SkeletonModifier &modifier,
 
 // Completion 1: grabing with 5 fingers
 static void completion_1(SkeletalMesh::SkeletonModifier &modifier, float passed_time) {
-  float period = 2.4f;
-  float time_in_period = fmod(passed_time, period);
+    float period = 2.4f;
+    float time_in_period = fmod(passed_time, period);
 
-  finger_move(modifier, "thumb", time_in_period, period, 6.0, 12.0, 12.0, 0.0);
-  finger_move(modifier, "index", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
-  finger_move(modifier, "middle", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
-  finger_move(modifier, "ring", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
-  finger_move(modifier, "pinky", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+    finger_move_clear(modifier);
+    finger_move(modifier, "thumb", time_in_period, period, 6.0, 12.0, 12.0, 0.0);
+    finger_move(modifier, "index", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+    finger_move(modifier, "middle", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+    finger_move(modifier, "ring", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+    finger_move(modifier, "pinky", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
 }
 
 // Completion 2: OK
@@ -306,6 +483,7 @@ static void completion_2(SkeletalMesh::SkeletonModifier &modifier, float passed_
     float period = 2.4f;
     float time_in_period = fmod(passed_time, period);
 
+    finger_move_clear(modifier);
     finger_move(modifier, "thumb", time_in_period, period, 6.0, 12.0, 12.0, 12.0);
     finger_move(modifier, "index", time_in_period, period, 6.0, 6.0, 2.0, 0.0);
 }
@@ -319,9 +497,41 @@ static void completion_3(SkeletalMesh::SkeletonModifier &modifier, float passed_
     // * rotation axis = (1, 0, 0)
     modifier["metacarpals"] = glm::rotate(glm::identity<glm::mat4>(), metacarpals_angle, glm::fvec3(0.0, 1.0, 0.0));
 
+    finger_move_clear(modifier);
     finger_move(modifier, "thumb", time_in_period, period, 0.0, -6.0, -4.0, 0.0);
     finger_move(modifier, "index", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
     finger_move(modifier, "middle", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
     finger_move(modifier, "ring", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
     finger_move(modifier, "pinky", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+}
+
+static void km_finger_move(SkeletalMesh::SkeletonModifier &modifier,
+                           std::string finger,
+                           bool should_bent,
+                           float proximal_angle,
+                           float intermediate_angle,
+                           float distal_angle) {
+    std::string proximal_s = finger + "_proximal_phalange";
+    std::string intermediate_s = finger + "_intermediate_phalange";
+    std::string distal_s = finger + "_distal_phalange";
+
+    if (should_bent) {
+        modifier[proximal_s] = glm::rotate(glm::identity<glm::mat4>(), proximal_angle, glm::fvec3(0.0, 0.0, 1.0));
+        modifier[intermediate_s] = glm::rotate(glm::identity<glm::mat4>(), intermediate_angle, glm::fvec3(0.0, 0.0, 1.0));
+        modifier[distal_s] = glm::rotate(glm::identity<glm::mat4>(), distal_angle, glm::fvec3(0.0, 0.0, 1.0));
+    } else {
+        modifier[proximal_s] = glm::identity<glm::mat4>();
+        modifier[intermediate_s] = glm::identity<glm::mat4>();
+        modifier[distal_s] = glm::identity<glm::mat4>();
+    }
+}
+
+// Control when KeyboardMouseControl
+static void keyboard_mouse_control(SkeletalMesh::SkeletonModifier &modifier) {
+    float bend_angle = M_PI / 3.0f;
+    km_finger_move(modifier, "thumb", thumb_bent, bend_angle * 0.2, bend_angle * 0.3, bend_angle * 0.5);
+    km_finger_move(modifier, "index", index_bent, bend_angle, bend_angle * 0.9, bend_angle * 0.8);
+    km_finger_move(modifier, "middle", middle_bent, bend_angle, bend_angle * 0.9, bend_angle * 0.8);
+    km_finger_move(modifier, "ring", ring_bent, bend_angle * 0.9, bend_angle * 0.8, bend_angle * 0.7);
+    km_finger_move(modifier, "pinky", pinky_bent, bend_angle * 0.9, bend_angle * 0.8, bend_angle * 0.7);
 }
