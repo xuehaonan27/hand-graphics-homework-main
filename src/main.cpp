@@ -67,6 +67,10 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
+static void completion_1(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
+static void completion_2(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
+static void completion_3(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
+
 int main(int argc, char *argv[]) {
     GLFWwindow *window;
     GLuint vertex_shader, fragment_shader, program;
@@ -181,6 +185,8 @@ int main(int argc, char *argv[]) {
         *
         \**********************************************************************************/
 
+// #define EXAMPLE_CODE
+#ifdef EXAMPLE_CODE
         // Example: Animate the index finger
         // * period = 2.4 seconds
         float period = 2.4f;
@@ -191,7 +197,22 @@ int main(int argc, char *argv[]) {
         // * rotation axis = (0, 0, 1)
         modifier["index_proximal_phalange"] = glm::rotate(glm::identity<glm::mat4>(), thumb_angle,
                                                           glm::fvec3(0.0, 0.0, 1.0));
+#endif // EXAMPLE_CODE
 
+// #define COMPLETION_1
+#ifdef COMPLETION_1
+        completion_1(modifier, passed_time);
+#endif // COMPLETION_1
+
+// #define COMPLETION_2
+#ifdef COMPLETION_2
+        completion_2(modifier, passed_time);
+#endif // COMPLETION_2
+
+#define COMPLETION_3
+#ifdef COMPLETION_3
+        completion_3(modifier, passed_time);
+#endif // COMPLETION_3
         // --- You may edit above ---
 
         float ratio;
@@ -228,4 +249,79 @@ int main(int argc, char *argv[]) {
 
     glfwTerminate();
     exit(EXIT_SUCCESS);
+}
+
+static void finger_move(SkeletalMesh::SkeletonModifier &modifier,
+                        std::string finger, float time_in_period, float period,
+                        float proximal_frac, float intermediate_frac,
+                        float distal_frac, float fingertip_frac) {
+  if (proximal_frac != 0.0) {
+    float proximal_angle =
+        abs(time_in_period / (period * 0.5f) - 1.0f) * (M_PI / proximal_frac);
+    std::string proximal_s = finger + "_proximal_phalange";
+    modifier[proximal_s] = glm::rotate(
+        glm::identity<glm::mat4>(), proximal_angle, glm::fvec3(0.0, 0.0, 1.0));
+  }
+
+  if (intermediate_frac != 0.0) {
+    float intermediate_angle = abs(time_in_period / (period * 0.5f) - 1.0f) *
+                               (M_PI / intermediate_frac);
+    std::string intermediate_s = finger + "_intermediate_phalange";
+    modifier[intermediate_s] =
+        glm::rotate(glm::identity<glm::mat4>(), intermediate_angle,
+                    glm::fvec3(0.0, 0.0, 1.0));
+  }
+
+  if (distal_frac != 0.0) {
+    float distal_angle =
+        abs(time_in_period / (period * 0.5f) - 1.0f) * (M_PI / distal_frac);
+    std::string distal_s = finger + "_distal_phalange";
+    modifier[distal_s] = glm::rotate(glm::identity<glm::mat4>(), distal_angle,
+                                     glm::fvec3(0.0, 0.0, 1.0));
+  }
+
+  if (fingertip_frac != 0.0) {
+    float fingertip_angle =
+        abs(time_in_period / (period * 0.5f) - 1.0f) * (M_PI / fingertip_frac);
+    std::string fingertip_s = finger + "_fingertip_phalange";
+    modifier[fingertip_s] = glm::rotate(
+        glm::identity<glm::mat4>(), fingertip_angle, glm::fvec3(0.0, 0.0, 1.0));
+  }
+}
+
+// Completion 1: grabing with 5 fingers
+static void completion_1(SkeletalMesh::SkeletonModifier &modifier, float passed_time) {
+  float period = 2.4f;
+  float time_in_period = fmod(passed_time, period);
+
+  finger_move(modifier, "thumb", time_in_period, period, 6.0, 12.0, 12.0, 0.0);
+  finger_move(modifier, "index", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+  finger_move(modifier, "middle", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+  finger_move(modifier, "ring", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+  finger_move(modifier, "pinky", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+}
+
+// Completion 2: OK
+static void completion_2(SkeletalMesh::SkeletonModifier &modifier, float passed_time) {
+    float period = 2.4f;
+    float time_in_period = fmod(passed_time, period);
+
+    finger_move(modifier, "thumb", time_in_period, period, 6.0, 12.0, 12.0, 12.0);
+    finger_move(modifier, "index", time_in_period, period, 6.0, 6.0, 2.0, 0.0);
+}
+
+static void completion_3(SkeletalMesh::SkeletonModifier &modifier, float passed_time) {
+    float period = 2.4f;
+    float time_in_period = fmod(passed_time, period);
+
+    float metacarpals_angle = abs(time_in_period / (period * 0.5f) - 1.0f) * (M_PI / 2.3f);
+    // * target = metacarpals
+    // * rotation axis = (1, 0, 0)
+    modifier["metacarpals"] = glm::rotate(glm::identity<glm::mat4>(), metacarpals_angle, glm::fvec3(0.0, 1.0, 0.0));
+
+    finger_move(modifier, "thumb", time_in_period, period, 0.0, -6.0, -4.0, 0.0);
+    finger_move(modifier, "index", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+    finger_move(modifier, "middle", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+    finger_move(modifier, "ring", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+    finger_move(modifier, "pinky", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
 }
