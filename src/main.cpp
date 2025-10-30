@@ -316,21 +316,6 @@ int main(int argc, char *argv[]) {
                                                           glm::fvec3(0.0, 0.0, 1.0));
 #endif // EXAMPLE_CODE
 
-// // #define COMPLETION_1
-// #ifdef COMPLETION_1
-//         completion_1(modifier, passed_time);
-// #endif // COMPLETION_1
-
-// // #define COMPLETION_2
-// #ifdef COMPLETION_2
-//         completion_2(modifier, passed_time);
-// #endif // COMPLETION_2
-
-// #define COMPLETION_3
-// #ifdef COMPLETION_3
-//         completion_3(modifier, passed_time);
-// #endif // COMPLETION_3
-
         switch (current_mode) {
             case Completion1:
                 completion_1(modifier, passed_time);
