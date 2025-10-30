@@ -68,7 +68,7 @@ enum DisplayMode {
 };
 
 static DisplayMode current_mode = KeyboardMouseControl;
-static bool keyboard_mouse_enabled = false;
+static bool keyboard_mouse_enabled = true;
 
 // Finger status for KeyboardMouseControl
 static bool thumb_bent = false;
@@ -90,8 +90,8 @@ static float yaw = -90.0f;   // Initial yaw facing -Z
 static float pitch = 0.0f;
 
 // Camera movement speed
-static float camera_speed = 0.1f;
-static float mouse_sensitivity = 0.1f;
+static float camera_speed = 0.03f;
+static float mouse_sensitivity = 3.0f;
 static float slerp_factor = 0.15f; // Smooth interpolation factor
 
 // Keyboard state
@@ -185,13 +185,13 @@ static void cursor_position_callback(GLFWwindow *window, double xpos, double ypo
         return;
     }
 
-    float xoffset = (xpos - last_x) * mouse_sensitivity;
-    float yoffset = (last_y - ypos) * mouse_sensitivity; // Reversed: y-coordinates go from bottom to top
+    float xoffset = (xpos - last_x) * camera_speed * mouse_sensitivity;
+    float yoffset = (last_y - ypos) * camera_speed * mouse_sensitivity; // Reversed: y-coordinates go from bottom to top
     
     last_x = xpos;
     last_y = ypos;
 
-    yaw += xoffset;
+    yaw += -xoffset;
     pitch += yoffset;
 
     // Constrain pitch
@@ -331,10 +331,10 @@ int main(int argc, char *argv[]) {
 
         // Example: Rotate the hand
         // * turn around every 4 seconds
-        float metacarpals_angle = passed_time * (M_PI / 4.0f);
+        // float metacarpals_angle = passed_time * (M_PI / 4.0f);
         // * target = metacarpals
         // * rotation axis = (1, 0, 0)
-        modifier["metacarpals"] = glm::rotate(glm::identity<glm::mat4>(), metacarpals_angle, glm::fvec3(1.0, 0.0, 0.0));
+        // modifier["metacarpals"] = glm::rotate(glm::identity<glm::mat4>(), metacarpals_angle, glm::fvec3(1.0, 0.0, 0.0));
 
         if (keyboard_mouse_enabled) {
             current_mode = KeyboardMouseControl;
