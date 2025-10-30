@@ -18,6 +18,8 @@
 #include "skeletal_mesh.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 namespace SkeletalAnimation {
     const char *vertex_shader_330 =
@@ -76,10 +78,29 @@ static bool ring_bent = false;
 static bool pinky_bent = false;
 
 // View
+// Camera quaternion-based control
+static glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, 15.0f);
+static glm::quat camera_orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identity quaternion
+static glm::quat target_orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+// Mouse control
 static double last_x = 400, last_y = 400;
-static float camera_rotation_x = 0.0f;
-static float camera_rotation_y = 0.0f;
-static float camera_distance = -15.0f;
+static bool first_mouse = true;
+static float yaw = -90.0f;   // Initial yaw facing -Z
+static float pitch = 0.0f;
+
+// Camera movement speed
+static float camera_speed = 0.1f;
+static float mouse_sensitivity = 0.1f;
+static float slerp_factor = 0.15f; // Smooth interpolation factor
+
+// Keyboard state
+static bool key_w_pressed = false;
+static bool key_a_pressed = false;
+static bool key_s_pressed = false;
+static bool key_d_pressed = false;
+static bool key_space_pressed = false;
+static bool key_shift_pressed = false;
 
 static void error_callback(int error, const char *description) {
     fprintf(stderr, "Error: %s\n", description);
@@ -92,10 +113,26 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
     // F: switch KeyboardMouseControl
     if (key == GLFW_KEY_F && action == GLFW_PRESS) {
         keyboard_mouse_enabled = !keyboard_mouse_enabled;
+        if (keyboard_mouse_enabled) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            first_mouse = true;
+        } else {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
         std::cout << "Keyboard/mouse control: " << (keyboard_mouse_enabled ? "ENABLED" : "DISABLED") << std::endl;
     }
 
-    // Only KeyboardMouseControl is disabled, 1, 2 and 3 will display
+    // Camera movement keys (WASD + Space + Shift)
+    if (keyboard_mouse_enabled) {
+        if (key == GLFW_KEY_W) key_w_pressed = (action != GLFW_RELEASE);
+        if (key == GLFW_KEY_A) key_a_pressed = (action != GLFW_RELEASE);
+        if (key == GLFW_KEY_S) key_s_pressed = (action != GLFW_RELEASE);
+        if (key == GLFW_KEY_D) key_d_pressed = (action != GLFW_RELEASE);
+        if (key == GLFW_KEY_SPACE) key_space_pressed = (action != GLFW_RELEASE);
+        if (key == GLFW_KEY_LEFT_SHIFT) key_shift_pressed = (action != GLFW_RELEASE);
+    }
+
+    // Only when KeyboardMouseControl is disabled, 1, 2 and 3 will display
     if (!keyboard_mouse_enabled) {
         if (key == GLFW_KEY_1 && action == GLFW_PRESS) {
             current_mode = Completion1;
@@ -138,42 +175,72 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 }
 
 static void cursor_position_callback(GLFWwindow *window, double xpos, double ypos) {
-    static bool first_mouse = true;
+    if (!keyboard_mouse_enabled)
+        return;
 
     if (first_mouse) {
         last_x = xpos;
         last_y = ypos;
         first_mouse = false;
+        return;
     }
 
-    float xoffset = last_x - xpos;
-    float yoffset = last_y - ypos; // reverse y axis
+    float xoffset = (xpos - last_x) * mouse_sensitivity;
+    float yoffset = (last_y - ypos) * mouse_sensitivity; // Reversed: y-coordinates go from bottom to top
+    
     last_x = xpos;
     last_y = ypos;
 
-    if (keyboard_mouse_enabled) {
-        float sensitivity = 0.5f;
-        xoffset *= sensitivity;
-        yoffset *= sensitivity;
-        
-        camera_rotation_y += xoffset;
-        camera_rotation_x += yoffset;
-        
-        // Limit vertical view
-        if (camera_rotation_x > 89.0f)
-            camera_rotation_x = 89.0f;
-        if (camera_rotation_x < -89.0f)
-            camera_rotation_x = -89.0f;
-    }
+    yaw += xoffset;
+    pitch += yoffset;
+
+    // Constrain pitch
+    if (pitch > 89.0f)
+        pitch = 89.0f;
+    if (pitch < -89.0f)
+        pitch = -89.0f;
+
+    // Convert yaw and pitch to quaternion
+    glm::quat qPitch = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::quat qYaw = glm::angleAxis(glm::radians(yaw), glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // Combine rotations: yaw first, then pitch
+    target_orientation = qYaw * qPitch;
 }
 
 static void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
     if (keyboard_mouse_enabled) {
-        camera_distance += yoffset * 1.0f;
-        // Limit scroll range
-        if (camera_distance > -1.0f) camera_distance = -1.0f;
-        if (camera_distance < -50.0f) camera_distance = -50.0f;
+        // Adjust movement speed with scroll
+        camera_speed += yoffset * 0.02f;
+        if (camera_speed < 0.01f) camera_speed = 0.01f;
+        if (camera_speed > 1.0f) camera_speed = 1.0f;
+        std::cout << "Camera speed: " << camera_speed << std::endl;
     }
+}
+
+static void update_camera_position() {
+    if (!keyboard_mouse_enabled)
+        return;
+
+    // Get camera forward, right, and up vectors from quaternion
+    glm::mat4 rotation_matrix = glm::mat4_cast(camera_orientation);
+    glm::vec3 forward = -glm::vec3(rotation_matrix[2]); // -Z axis
+    glm::vec3 right = glm::vec3(rotation_matrix[0]);    // X axis
+    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);         // World up
+
+    // Process movement
+    if (key_w_pressed)
+        camera_position += forward * camera_speed;
+    if (key_s_pressed)
+        camera_position -= forward * camera_speed;
+    if (key_a_pressed)
+        camera_position -= right * camera_speed;
+    if (key_d_pressed)
+        camera_position += right * camera_speed;
+    if (key_space_pressed)
+        camera_position += up * camera_speed;
+    if (key_shift_pressed)
+        camera_position -= up * camera_speed;
 }
 
 static void completion_1(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
@@ -240,10 +307,27 @@ int main(int argc, char *argv[]) {
     SkeletalMesh::SkeletonModifier modifier;
 
     glEnable(GL_DEPTH_TEST);
+    
+    std::cout << "\n=== Camera Controls ===" << std::endl;
+    std::cout << "Press F to toggle camera control mode" << std::endl;
+    std::cout << "When enabled:" << std::endl;
+    std::cout << "  WASD: Move camera forward/left/backward/right" << std::endl;
+    std::cout << "  Space: Move up" << std::endl;
+    std::cout << "  Shift: Move down" << std::endl;
+    std::cout << "  Mouse: Rotate view" << std::endl;
+    std::cout << "  Scroll: Adjust movement speed" << std::endl;
+    std::cout << "  Z/X/C/V/B: Control fingers" << std::endl;
+    std::cout << "======================\n" << std::endl;
+
     while (!glfwWindowShouldClose(window)) {
         passed_time = (float) glfwGetTime();
 
         // --- You may edit below ---
+        // Update camera position based on keyboard input
+        update_camera_position();
+
+        // Smooth quaternion interpolation (SLERP)
+        camera_orientation = glm::slerp(camera_orientation, target_orientation, slerp_factor);
 
         // Example: Rotate the hand
         // * turn around every 4 seconds
@@ -316,19 +400,19 @@ int main(int argc, char *argv[]) {
                                                           glm::fvec3(0.0, 0.0, 1.0));
 #endif // EXAMPLE_CODE
 
-        switch (current_mode) {
-            case Completion1:
-                completion_1(modifier, passed_time);
-                break;
-            case Completion2:
-                completion_2(modifier, passed_time);
-                break;
-            case Completion3:
-                completion_3(modifier, passed_time);
-                break;
-            default:
-                break;
-        }
+            switch (current_mode) {
+                case Completion1:
+                    completion_1(modifier, passed_time);
+                    break;
+                case Completion2:
+                    completion_2(modifier, passed_time);
+                    break;
+                case Completion3:
+                    completion_3(modifier, passed_time);
+                    break;
+                default:
+                    break;
+            }
         }
 
         // --- You may edit above ---
@@ -348,20 +432,19 @@ int main(int argc, char *argv[]) {
 
         glm::fmat4 mvp;
         if (!keyboard_mouse_enabled) {
+            // Original orthographic view
             mvp = glm::ortho(-12.5f * ratio, 12.5f * ratio, -5.f, 20.f, -20.f, 20.f)
                          *
                          glm::lookAt(glm::fvec3(.0f, .0f, -1.f), glm::fvec3(.0f, .0f, .0f), glm::fvec3(.0f, 1.f, .0f));
         } else {
-            glm::vec3 cameraPos;
-            cameraPos.x = camera_distance * sin(glm::radians(camera_rotation_y)) * cos(glm::radians(camera_rotation_x));
-            cameraPos.y = camera_distance * sin(glm::radians(camera_rotation_x));
-            cameraPos.z = camera_distance * cos(glm::radians(camera_rotation_y)) * cos(glm::radians(camera_rotation_x));
-            glm::mat4 view = glm::lookAt(
-                cameraPos,
-                glm::vec3(0.0f, 0.0f, 0.0f),
-                glm::vec3(0.0f, 1.0f, 0.0f)
-            );
-            mvp = glm::perspective(glm::radians(45.0f), ratio, 0.1f, 100.0f) * view;
+            // Quaternion-based camera view
+            glm::mat4 rotation_matrix = glm::mat4_cast(camera_orientation);
+            glm::vec3 forward = -glm::vec3(rotation_matrix[2]);
+            glm::vec3 target = camera_position + forward;
+            glm::vec3 up = glm::vec3(rotation_matrix[1]);
+            glm::mat4 view = glm::lookAt(camera_position, target, up);
+            glm::mat4 projection = glm::perspective(glm::radians(45.0f), ratio, 0.1f, 100.0f);
+            mvp = projection * view;
         }
 
         glUniformMatrix4fv(glGetUniformLocation(program, "u_mvp"), 1, GL_FALSE, (const GLfloat *) &mvp);
