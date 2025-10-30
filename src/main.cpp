@@ -113,23 +113,23 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 
     if (keyboard_mouse_enabled && action == GLFW_PRESS) {
         switch (key) {
-            case GLFW_KEY_Q:
+            case GLFW_KEY_Z:
                 thumb_bent = !thumb_bent;
                 std::cout << "Thumb: " << (thumb_bent ? "BENT" : "STRAIGHT") << std::endl;
                 break;
-            case GLFW_KEY_W:
+            case GLFW_KEY_X:
                 index_bent = !index_bent;
                 std::cout << "Index: " << (index_bent ? "BENT" : "STRAIGHT") << std::endl;
                 break;
-            case GLFW_KEY_E:
+            case GLFW_KEY_C:
                 middle_bent = !middle_bent;
                 std::cout << "Middle: " << (middle_bent ? "BENT" : "STRAIGHT") << std::endl;
                 break;
-            case GLFW_KEY_R:
+            case GLFW_KEY_V:
                 ring_bent = !ring_bent;
                 std::cout << "Ring: " << (ring_bent ? "BENT" : "STRAIGHT") << std::endl;
                 break;
-            case GLFW_KEY_T:
+            case GLFW_KEY_B:
                 pinky_bent = !pinky_bent;
                 std::cout << "Pinky: " << (pinky_bent ? "BENT" : "STRAIGHT") << std::endl;
                 break;
