@@ -68,7 +68,7 @@ enum DisplayMode {
 };
 
 static DisplayMode current_mode = KeyboardMouseControl;
-static bool keyboard_mouse_enabled = true;
+static bool keyboard_mouse_enabled = false;
 
 // Finger status for KeyboardMouseControl
 static bool thumb_bent = false;
@@ -116,6 +116,17 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
         if (keyboard_mouse_enabled) {
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             first_mouse = true;
+
+            double current_x, current_y;
+            glfwGetCursorPos(window, &current_x, &current_y);
+            last_x = current_x;
+            last_y = current_y;
+
+            glm::vec3 euler = glm::eulerAngles(camera_orientation);
+            yaw = glm::degrees(euler.y);
+            pitch = glm::degrees(euler.x);
+
+            target_orientation = camera_orientation;
         } else {
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         }
