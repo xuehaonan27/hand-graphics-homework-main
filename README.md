@@ -68,17 +68,17 @@ cd src/
     <img src="./assets/quat_headers.png" alt="drawing" width="70%"/>
 </div>
 
-1. 在 QuaterionCamera 类定义中采用了四元数表示和处理相机朝向。
+2. 在 QuaterionCamera 类定义中采用了四元数表示和处理相机朝向。
 <div align="center">
     <img src="./assets/class_defs.png" alt="drawing" width="70%"/>
 </div>
 
-1. 在处理鼠标输入更改相机朝向时，利用四元数。
+3. 在处理鼠标输入更改相机朝向时，利用四元数。
 <div align="center">
     <img src="./assets/process_mouse.png" alt="drawing" width="70%"/>
 </div>
 
-1. 在实现连续平滑过渡时，利用四元数插值法。
+4. 在实现连续平滑过渡时，利用四元数插值法。
 <div align="center">
     <img src="./assets/smooth_transition.png" alt="drawing" width="70%"/>
 </div>
