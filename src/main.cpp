@@ -402,7 +402,8 @@ int main(int argc, char *argv[]) {
     std::cout << "  Space: Move up" << std::endl;
     std::cout << "  Shift: Move down" << std::endl;
     std::cout << "  Mouse: Rotate view" << std::endl;
-    std::cout << "  Scroll: Adjust movement speed" << std::endl;
+    std::cout << "  Scroll: Zoom in/out" << std::endl;
+    std::cout << "  Q/E: Adjust movement speed" << std::endl;
     std::cout << "  Z/X/C/V/B: Control fingers" << std::endl;
     std::cout << "======================\n" << std::endl;
 
