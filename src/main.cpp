@@ -60,6 +60,157 @@ namespace SkeletalAnimation {
             "}\n";
 }
 
+static double last_mouse_x = 400, last_mouse_y = 400;
+static bool first_mouse = true;
+
+// Quaterion controlled camera
+class QuaternionCamera {
+public:
+    QuaternionCamera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 15.0f)) 
+        : position(position), 
+          worldUp(glm::vec3(0.0f, 1.0f, 0.0f)),
+          movementSpeed(25.0f),
+          mouseSensitivity(0.1f),
+          fov(45.0f) {
+        orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        targetOrientation = orientation;
+        updateVectors();
+    }
+    
+    glm::mat4 getViewMatrix() const {
+        return glm::lookAt(position, position + front, up);
+    }
+    
+    glm::mat4 getProjectionMatrix(float aspectRatio, bool usePerspective = true) const {
+        if (usePerspective) {
+            return glm::perspective(glm::radians(fov), aspectRatio, 0.1f, 100.0f);
+        } else {
+            return glm::ortho(-12.5f * aspectRatio, 12.5f * aspectRatio, -5.f, 20.f, -20.f, 20.f);
+        }
+    }
+    
+    void processKeyboard(bool w, bool a, bool s, bool d, bool space, bool shift, float deltaTime) {
+        float velocity = movementSpeed * deltaTime;
+        if (w) position += front * velocity;
+        if (s) position -= front * velocity;
+        if (a) position -= right * velocity;
+        if (d) position += right * velocity;
+        if (space) position += worldUp * velocity;
+        if (shift) position -= worldUp * velocity;
+    }
+    
+    void processMouseMovement(double xoffset, double yoffset, bool constrainPitch = true) {
+        xoffset *= mouseSensitivity;
+        yoffset *= mouseSensitivity;
+        yaw += xoffset;
+        pitch += yoffset;
+
+        if (constrainPitch) {
+            if (pitch > 89.0f) pitch = 89.0f;
+            if (pitch < -89.0f) pitch = -89.0f;
+        }
+        
+        // Create quaterion from eular angle (Yaw -> Pitch)
+        glm::quat qYaw = glm::angleAxis(glm::radians(yaw), worldUp);
+        glm::quat qPitch = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+        targetOrientation = qYaw * qPitch;
+        targetOrientation = glm::normalize(targetOrientation);
+    }
+    
+    void updateCameraOrientation(float deltaTime) {
+        // Quaterion slerp
+        float slerpFactor = glm::clamp(10.0f * deltaTime, 0.01f, 0.5f);
+        orientation = glm::slerp(orientation, targetOrientation, slerpFactor);
+        orientation = glm::normalize(orientation);
+        
+        updateVectors();
+    }
+    
+    void processMouseScroll(double yoffset) {
+        fov -= (float)yoffset;
+        if (fov < 1.0f) fov = 1.0f;
+        if (fov > 45.0f) fov = 45.0f;
+    }
+    
+    void setPosition(const glm::vec3& newPosition) { position = newPosition; }
+    glm::vec3 getPosition() const { return position; }
+    void reportPosition() const {
+        std::cout << "Position: " << "[" << position[0] << ", " << position[1] << ", " << position[2] << "]" << std::endl;
+    }
+    void reportOrientation() const {
+        std::cout << "Orientation: " << "[" << orientation[0] << ", " << orientation[1] << ", " << orientation[2] << "]" << std::endl;
+    }
+    glm::vec3 getFront() const { return front; }
+    glm::vec3 getUp() const { return up; }
+    glm::vec3 getRight() const { return right; }
+    
+    void setMovementSpeed(float speed) { movementSpeed = speed; }
+    void incMovementSpeed() { 
+        movementSpeed = movementSpeed > 50.0 ? movementSpeed : movementSpeed + 1.0;
+        std::cout << "Camera movement speed: " << movementSpeed << std::endl;
+    }
+    void decMovementSpeed() {
+        movementSpeed = movementSpeed == 0.0 ? movementSpeed : movementSpeed - 1.0;
+        std::cout << "Camera movement speed: " << movementSpeed << std::endl;
+    }
+    void setMouseSensitivity(float sensitivity) { mouseSensitivity = sensitivity; }
+
+    void resetOrientation(double current_x, double current_y) {
+            last_mouse_x = current_x;
+            last_mouse_y = current_y;
+
+            glm::vec3 euler = glm::eulerAngles(orientation);
+            yaw = glm::degrees(euler.y);
+            pitch = glm::degrees(euler.x);
+
+            targetOrientation = orientation;
+        // yaw = -90.0f;
+        // pitch = 0.0f;
+        
+        // glm::quat qYaw = glm::angleAxis(glm::radians(yaw), worldUp);
+        // glm::quat qPitch = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+        // orientation = qYaw * qPitch;
+        // targetOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        
+        updateVectors();
+    }
+
+    void lookAt(const glm::vec3& target) {
+        glm::vec3 direction = glm::normalize(target - position);
+        
+        pitch = glm::degrees(asin(direction.y));
+        yaw = glm::degrees(atan2(direction.z, direction.x)) - 90.0f;
+        
+        glm::quat qYaw = glm::angleAxis(glm::radians(yaw), worldUp);
+        glm::quat qPitch = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+        orientation = qYaw * qPitch;
+        targetOrientation = orientation;
+        
+        updateVectors();
+    }
+
+private:
+    void updateVectors() {
+        // Extra orientation vector from quaterion
+        glm::mat4 rotation = glm::mat4_cast(orientation);
+        front = -glm::vec3(rotation[2]);
+        right = glm::vec3(rotation[0]);
+        up = glm::vec3(rotation[1]);
+    }
+
+    glm::vec3 position;
+    glm::vec3 front, right, up, worldUp;
+    glm::quat orientation;
+    glm::quat targetOrientation;
+    float yaw = -90.0f;
+    float pitch = 0.0f;
+    float movementSpeed;
+    float mouseSensitivity;
+    float fov;
+};
+
+static QuaternionCamera camera;
+
 enum DisplayMode {
     KeyboardMouseControl = 0,
     Completion1 = 1,
@@ -76,31 +227,6 @@ static bool index_bent = false;
 static bool middle_bent = false;
 static bool ring_bent = false;
 static bool pinky_bent = false;
-
-// View
-// Camera quaternion-based control
-static glm::vec3 camera_position = glm::vec3(0.0f, 0.0f, 15.0f);
-static glm::quat camera_orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // Identity quaternion
-static glm::quat target_orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-
-// Mouse control
-static double last_x = 400, last_y = 400;
-static bool first_mouse = true;
-static float yaw = -90.0f;   // Initial yaw facing -Z
-static float pitch = 0.0f;
-
-// Camera movement speed
-static float camera_speed = 0.03f;
-static float mouse_sensitivity = 3.0f;
-static float slerp_factor = 0.15f; // Smooth interpolation factor
-
-// Keyboard state
-static bool key_w_pressed = false;
-static bool key_a_pressed = false;
-static bool key_s_pressed = false;
-static bool key_d_pressed = false;
-static bool key_space_pressed = false;
-static bool key_shift_pressed = false;
 
 static void error_callback(int error, const char *description) {
     fprintf(stderr, "Error: %s\n", description);
@@ -119,28 +245,14 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 
             double current_x, current_y;
             glfwGetCursorPos(window, &current_x, &current_y);
-            last_x = current_x;
-            last_y = current_y;
-
-            glm::vec3 euler = glm::eulerAngles(camera_orientation);
-            yaw = glm::degrees(euler.y);
-            pitch = glm::degrees(euler.x);
-
-            target_orientation = camera_orientation;
+            camera.setPosition(glm::vec3(0.0f, 0.0f, 15.0f));
+            camera.resetOrientation(current_x, current_y);
         } else {
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            camera.setPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+            camera.lookAt(glm::vec3(0.0f, 0.0f, -1.0f));
         }
         std::cout << "Keyboard/mouse control: " << (keyboard_mouse_enabled ? "ENABLED" : "DISABLED") << std::endl;
-    }
-
-    // Camera movement keys (WASD + Space + Shift)
-    if (keyboard_mouse_enabled) {
-        if (key == GLFW_KEY_W) key_w_pressed = (action != GLFW_RELEASE);
-        if (key == GLFW_KEY_A) key_a_pressed = (action != GLFW_RELEASE);
-        if (key == GLFW_KEY_S) key_s_pressed = (action != GLFW_RELEASE);
-        if (key == GLFW_KEY_D) key_d_pressed = (action != GLFW_RELEASE);
-        if (key == GLFW_KEY_SPACE) key_space_pressed = (action != GLFW_RELEASE);
-        if (key == GLFW_KEY_LEFT_SHIFT) key_shift_pressed = (action != GLFW_RELEASE);
     }
 
     // Only when KeyboardMouseControl is disabled, 1, 2 and 3 will display
@@ -161,6 +273,12 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 
     if (keyboard_mouse_enabled && action == GLFW_PRESS) {
         switch (key) {
+            case GLFW_KEY_E:
+                camera.incMovementSpeed();
+                break;
+            case GLFW_KEY_Q:
+                camera.decMovementSpeed();
+                break;
             case GLFW_KEY_Z:
                 thumb_bent = !thumb_bent;
                 std::cout << "Thumb: " << (thumb_bent ? "BENT" : "STRAIGHT") << std::endl;
@@ -190,68 +308,26 @@ static void cursor_position_callback(GLFWwindow *window, double xpos, double ypo
         return;
 
     if (first_mouse) {
-        last_x = xpos;
-        last_y = ypos;
+        last_mouse_x = xpos;
+        last_mouse_y = ypos;
         first_mouse = false;
         return;
     }
 
-    float xoffset = (xpos - last_x) * camera_speed * mouse_sensitivity;
-    float yoffset = (last_y - ypos) * camera_speed * mouse_sensitivity; // Reversed: y-coordinates go from bottom to top
+    // double xoffset = xpos - last_mouse_x;
+    double xoffset = last_mouse_x - xpos; // flip X axis // -xoffset, TODO: add flip
+    double yoffset = last_mouse_y - ypos; // flip Y axis
     
-    last_x = xpos;
-    last_y = ypos;
+    last_mouse_x = xpos;
+    last_mouse_y = ypos;
 
-    yaw += -xoffset;
-    pitch += yoffset;
-
-    // Constrain pitch
-    if (pitch > 89.0f)
-        pitch = 89.0f;
-    if (pitch < -89.0f)
-        pitch = -89.0f;
-
-    // Convert yaw and pitch to quaternion
-    glm::quat qPitch = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
-    glm::quat qYaw = glm::angleAxis(glm::radians(yaw), glm::vec3(0.0f, 1.0f, 0.0f));
-
-    // Combine rotations: yaw first, then pitch
-    target_orientation = qYaw * qPitch;
+    camera.processMouseMovement(xoffset, yoffset);
 }
 
 static void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
     if (keyboard_mouse_enabled) {
-        // Adjust movement speed with scroll
-        camera_speed += yoffset * 0.02f;
-        if (camera_speed < 0.01f) camera_speed = 0.01f;
-        if (camera_speed > 1.0f) camera_speed = 1.0f;
-        std::cout << "Camera speed: " << camera_speed << std::endl;
+        camera.processMouseScroll(yoffset);
     }
-}
-
-static void update_camera_position() {
-    if (!keyboard_mouse_enabled)
-        return;
-
-    // Get camera forward, right, and up vectors from quaternion
-    glm::mat4 rotation_matrix = glm::mat4_cast(camera_orientation);
-    glm::vec3 forward = -glm::vec3(rotation_matrix[2]); // -Z axis
-    glm::vec3 right = glm::vec3(rotation_matrix[0]);    // X axis
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);         // World up
-
-    // Process movement
-    if (key_w_pressed)
-        camera_position += forward * camera_speed;
-    if (key_s_pressed)
-        camera_position -= forward * camera_speed;
-    if (key_a_pressed)
-        camera_position -= right * camera_speed;
-    if (key_d_pressed)
-        camera_position += right * camera_speed;
-    if (key_space_pressed)
-        camera_position += up * camera_speed;
-    if (key_shift_pressed)
-        camera_position -= up * camera_speed;
 }
 
 static void completion_1(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
@@ -330,15 +406,41 @@ int main(int argc, char *argv[]) {
     std::cout << "  Z/X/C/V/B: Control fingers" << std::endl;
     std::cout << "======================\n" << std::endl;
 
+    static int ticked_time_sec = 0;
+
     while (!glfwWindowShouldClose(window)) {
         passed_time = (float) glfwGetTime();
 
-        // --- You may edit below ---
-        // Update camera position based on keyboard input
-        update_camera_position();
+        static float last_frame = 0.0f;
+        float current_frame = passed_time;
+        float delta_time = current_frame - last_frame;
+        last_frame = current_frame;
 
-        // Smooth quaternion interpolation (SLERP)
-        camera_orientation = glm::slerp(camera_orientation, target_orientation, slerp_factor);
+        if (passed_time >= ticked_time_sec) {
+            std::cout << "At " << passed_time << std::endl;
+            ticked_time_sec += 1;
+            camera.reportPosition();
+            camera.reportOrientation();
+        }
+
+        // --- You may edit below ---
+        // // Update camera position based on keyboard input
+        // update_camera_position();
+
+        // // Smooth quaternion interpolation (SLERP)
+        // camera_orientation = glm::slerp(camera_orientation, target_orientation, slerp_factor);
+        
+        camera.processKeyboard(
+            glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS,
+            glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS,
+            glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS,
+            glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
+            glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS,
+            glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS,
+            delta_time
+        );
+
+        camera.updateCameraOrientation(delta_time);
 
         // Example: Rotate the hand
         // * turn around every 4 seconds
@@ -441,20 +543,33 @@ int main(int argc, char *argv[]) {
 
         glUseProgram(program);
 
+        // glm::fmat4 mvp;
+        // if (!keyboard_mouse_enabled) {
+        //     // Original orthographic view
+        //     mvp = glm::ortho(-12.5f * ratio, 12.5f * ratio, -5.f, 20.f, -20.f, 20.f)
+        //                  *
+        //                  glm::lookAt(glm::fvec3(.0f, .0f, -1.f), glm::fvec3(.0f, .0f, .0f), glm::fvec3(.0f, 1.f, .0f));
+        // } else {
+        //     // Quaternion-based camera view
+        //     glm::mat4 rotation_matrix = glm::mat4_cast(camera_orientation);
+        //     glm::vec3 forward = -glm::vec3(rotation_matrix[2]);
+        //     glm::vec3 target = camera_position + forward;
+        //     glm::vec3 up = glm::vec3(rotation_matrix[1]);
+        //     glm::mat4 view = glm::lookAt(camera_position, target, up);
+        //     glm::mat4 projection = glm::perspective(glm::radians(45.0f), ratio, 0.1f, 100.0f);
+        //     mvp = projection * view;
+        // }
+
         glm::fmat4 mvp;
         if (!keyboard_mouse_enabled) {
-            // Original orthographic view
-            mvp = glm::ortho(-12.5f * ratio, 12.5f * ratio, -5.f, 20.f, -20.f, 20.f)
-                         *
-                         glm::lookAt(glm::fvec3(.0f, .0f, -1.f), glm::fvec3(.0f, .0f, .0f), glm::fvec3(.0f, 1.f, .0f));
+            // Non keyboard-mouse mode: using ortho
+            glm::mat4 view = camera.getViewMatrix();
+            glm::mat4 projection = camera.getProjectionMatrix(ratio, false);
+            mvp = projection * view;
         } else {
-            // Quaternion-based camera view
-            glm::mat4 rotation_matrix = glm::mat4_cast(camera_orientation);
-            glm::vec3 forward = -glm::vec3(rotation_matrix[2]);
-            glm::vec3 target = camera_position + forward;
-            glm::vec3 up = glm::vec3(rotation_matrix[1]);
-            glm::mat4 view = glm::lookAt(camera_position, target, up);
-            glm::mat4 projection = glm::perspective(glm::radians(45.0f), ratio, 0.1f, 100.0f);
+            // Keyboard-mouse mode: using perspective
+            glm::mat4 view = camera.getViewMatrix();
+            glm::mat4 projection = camera.getProjectionMatrix(ratio, true);
             mvp = projection * view;
         }
 
