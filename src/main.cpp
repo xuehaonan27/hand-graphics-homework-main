@@ -60,6 +60,9 @@ namespace SkeletalAnimation {
             "}\n";
 }
 
+static double last_mouse_x = 400, last_mouse_y = 400;
+static bool first_mouse = true;
+
 // Quaterion controlled camera
 class QuaternionCamera {
 public:
@@ -99,8 +102,6 @@ public:
     void processMouseMovement(double xoffset, double yoffset, bool constrainPitch = true) {
         xoffset *= mouseSensitivity;
         yoffset *= mouseSensitivity;
-        static float yaw = -90.0f;
-        static float pitch = 0.0f;
         yaw += xoffset;
         pitch += yoffset;
 
@@ -133,6 +134,12 @@ public:
     
     void setPosition(const glm::vec3& newPosition) { position = newPosition; }
     glm::vec3 getPosition() const { return position; }
+    void reportPosition() const {
+        std::cout << "Position: " << "[" << position[0] << ", " << position[1] << ", " << position[2] << "]" << std::endl;
+    }
+    void reportOrientation() const {
+        std::cout << "Orientation: " << "[" << orientation[0] << ", " << orientation[1] << ", " << orientation[2] << "]" << std::endl;
+    }
     glm::vec3 getFront() const { return front; }
     glm::vec3 getUp() const { return up; }
     glm::vec3 getRight() const { return right; }
@@ -148,6 +155,40 @@ public:
     }
     void setMouseSensitivity(float sensitivity) { mouseSensitivity = sensitivity; }
 
+    void resetOrientation(double current_x, double current_y) {
+            last_mouse_x = current_x;
+            last_mouse_y = current_y;
+
+            glm::vec3 euler = glm::eulerAngles(orientation);
+            yaw = glm::degrees(euler.y);
+            pitch = glm::degrees(euler.x);
+
+            targetOrientation = orientation;
+        // yaw = -90.0f;
+        // pitch = 0.0f;
+        
+        // glm::quat qYaw = glm::angleAxis(glm::radians(yaw), worldUp);
+        // glm::quat qPitch = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+        // orientation = qYaw * qPitch;
+        // targetOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        
+        updateVectors();
+    }
+
+    void lookAt(const glm::vec3& target) {
+        glm::vec3 direction = glm::normalize(target - position);
+        
+        pitch = glm::degrees(asin(direction.y));
+        yaw = glm::degrees(atan2(direction.z, direction.x)) - 90.0f;
+        
+        glm::quat qYaw = glm::angleAxis(glm::radians(yaw), worldUp);
+        glm::quat qPitch = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+        orientation = qYaw * qPitch;
+        targetOrientation = orientation;
+        
+        updateVectors();
+    }
+
 private:
     void updateVectors() {
         // Extra orientation vector from quaterion
@@ -161,14 +202,14 @@ private:
     glm::vec3 front, right, up, worldUp;
     glm::quat orientation;
     glm::quat targetOrientation;
+    float yaw = -90.0f;
+    float pitch = 0.0f;
     float movementSpeed;
     float mouseSensitivity;
     float fov;
 };
 
 static QuaternionCamera camera;
-static double last_mouse_x = 400, last_mouse_y = 400;
-static bool first_mouse = true;
 
 enum DisplayMode {
     KeyboardMouseControl = 0,
@@ -202,10 +243,14 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             first_mouse = true;
 
-            // 重置相机位置到合适的位置
+            double current_x, current_y;
+            glfwGetCursorPos(window, &current_x, &current_y);
             camera.setPosition(glm::vec3(0.0f, 0.0f, 15.0f));
+            camera.resetOrientation(current_x, current_y);
         } else {
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            camera.setPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+            camera.lookAt(glm::vec3(0.0f, 0.0f, -1.0f));
         }
         std::cout << "Keyboard/mouse control: " << (keyboard_mouse_enabled ? "ENABLED" : "DISABLED") << std::endl;
     }
@@ -361,6 +406,8 @@ int main(int argc, char *argv[]) {
     std::cout << "  Z/X/C/V/B: Control fingers" << std::endl;
     std::cout << "======================\n" << std::endl;
 
+    static int ticked_time_sec = 0;
+
     while (!glfwWindowShouldClose(window)) {
         passed_time = (float) glfwGetTime();
 
@@ -368,6 +415,13 @@ int main(int argc, char *argv[]) {
         float current_frame = passed_time;
         float delta_time = current_frame - last_frame;
         last_frame = current_frame;
+
+        if (passed_time >= ticked_time_sec) {
+            std::cout << "At " << passed_time << std::endl;
+            ticked_time_sec += 1;
+            camera.reportPosition();
+            camera.reportOrientation();
+        }
 
         // --- You may edit below ---
         // // Update camera position based on keyboard input
