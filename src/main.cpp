@@ -63,6 +63,7 @@ namespace SkeletalAnimation {
 void print_help() {
     std::cout << "\n=== Hand Homework ===" << std::endl;
     std::cout << "  F: enable / disable camera controls" << std::endl;
+    std::cout << "  R: reset camera position and orientation" << std::endl;
     std::cout << "  H: print this help" << std::endl;
     std::cout << "\n=== Camera Controls (When Enabled) ===" << std::endl;
     std::cout << "  WASD: Move camera forward/left/backward/right" << std::endl;
