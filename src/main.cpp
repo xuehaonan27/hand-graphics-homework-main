@@ -60,6 +60,32 @@ namespace SkeletalAnimation {
             "}\n";
 }
 
+void print_help() {
+    std::cout << "\n=== Hand Homework ===" << std::endl;
+    std::cout << "  F: enable / disable camera controls" << std::endl;
+    std::cout << "  H: print this help" << std::endl;
+    std::cout << "\n=== Camera Controls (When Enabled) ===" << std::endl;
+    std::cout << "  WASD: Move camera forward/left/backward/right" << std::endl;
+    std::cout << "  Space: Move up" << std::endl;
+    std::cout << "  Shift: Move down" << std::endl;
+    std::cout << "  Mouse: Rotate view" << std::endl;
+    std::cout << "  Scroll: Zoom in/out" << std::endl;
+    std::cout << "  Q/E: Adjust movement speed" << std::endl;
+    std::cout << "\n=== Transition Controls ===" << std::endl;
+    std::cout << "  G: Record camera state (first press for recording A, second for B)" << std::endl;
+    std::cout << "  P: Play transition from A to B" << std::endl;
+    std::cout << "  O: Play transition from B to A" << std::endl;
+    std::cout << "  K: Clear recorded states" << std::endl;
+    std::cout << "\n=== Hand Controls ===" << std::endl;
+    std::cout << "  1: Preset movement 1" << std::endl;
+    std::cout << "  2: Preset movement 2" << std::endl;
+    std::cout << "  3: Preset movement 3" << std::endl;
+    std::cout << "  9: Default rotating hand" << std::endl;
+    std::cout << "  0: Default static hand" << std::endl;
+    std::cout << "  Z/X/C/V/B: Control fingers when hand is default rotating / default static" << std::endl;
+    std::cout << "======================\n" << std::endl;
+}
+
 static double last_mouse_x = 400, last_mouse_y = 400;
 static bool first_mouse = true;
 
@@ -190,7 +216,7 @@ public:
     }
 
     void resetStatus() {
-        position = glm::vec3(0.0f, 0.0f, 15.0f);
+        position = glm::vec3(0.0f, 5.0f, 30.0f);
         worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
         fov = 45.0f;
         orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -236,6 +262,7 @@ enum DisplayMode {
     Completion1 = 1,
     Completion2 = 2,
     Completion3 = 3,
+    DefaultRotate = 9,
 };
 
 static DisplayMode current_mode = Default;
@@ -281,9 +308,16 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
                 current_mode = Completion3;
                 std::cout << "Mode: Completion 3" << std::endl;
                 break;
+            case GLFW_KEY_9:
+                current_mode = DefaultRotate;
+                std::cout << "Mode: DefaultRotate" << std::endl;
+                break;
             case GLFW_KEY_0:
                 current_mode = Default;
                 std::cout << "Mode: Default" << std::endl;
+                break;
+            case GLFW_KEY_H:
+                print_help();
                 break;
             case GLFW_KEY_R:
                 camera.resetStatus();
@@ -407,6 +441,7 @@ static void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) 
 static void completion_1(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
 static void completion_2(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
 static void completion_3(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
+static void default_rotate(SkeletalMesh::SkeletonModifier &modifier, float passed_time);
 static void keyboard_mouse_control(SkeletalMesh::SkeletonModifier &modifier);
 static void finger_move_clear(SkeletalMesh::SkeletonModifier &modifier);
 
@@ -470,22 +505,7 @@ int main(int argc, char *argv[]) {
 
     glEnable(GL_DEPTH_TEST);
     
-    std::cout << "\n=== Camera Controls ===" << std::endl;
-    std::cout << "Press F to toggle camera control mode" << std::endl;
-    std::cout << "When enabled:" << std::endl;
-    std::cout << "  WASD: Move camera forward/left/backward/right" << std::endl;
-    std::cout << "  Space: Move up" << std::endl;
-    std::cout << "  Shift: Move down" << std::endl;
-    std::cout << "  Mouse: Rotate view" << std::endl;
-    std::cout << "  Scroll: Zoom in/out" << std::endl;
-    std::cout << "  Q/E: Adjust movement speed" << std::endl;
-    std::cout << "  Z/X/C/V/B: Control fingers" << std::endl;
-    std::cout << "=== Transition Controls (when camera control mode enabled) ===" << std::endl;
-    std::cout << "  G: Record camera state (first press for A, second for B)" << std::endl;
-    std::cout << "  P: Play transition from A to B" << std::endl;
-    std::cout << "  O: Play transition from B to A" << std::endl;
-    std::cout << "  K: Clear recorded states" << std::endl;
-    std::cout << "======================\n" << std::endl;
+    print_help();
 
     static int ticked_time_sec = 0;
 
@@ -609,9 +629,15 @@ int main(int argc, char *argv[]) {
             case Completion3:
                 completion_3(modifier, passed_time);
                 break;
-            default:
+            case DefaultRotate:
+                default_rotate(modifier, passed_time);
+                keyboard_mouse_control(modifier);
+                break;
+            case Default:
                 finger_move_clear(modifier);
                 keyboard_mouse_control(modifier);
+                break;
+            default:
                 break;
         }
 
@@ -764,6 +790,12 @@ static void completion_3(SkeletalMesh::SkeletonModifier &modifier, float passed_
     finger_move(modifier, "middle", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
     finger_move(modifier, "ring", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
     finger_move(modifier, "pinky", time_in_period, period, 3.0, 3.0, 2.0, 0.0);
+}
+
+static void default_rotate(SkeletalMesh::SkeletonModifier &modifier, float passed_time) {
+    finger_move_clear(modifier);
+    float metacarpals_angle = passed_time * (M_PI / 4.0f);
+    modifier["metacarpals"] = glm::rotate(glm::identity<glm::mat4>(), metacarpals_angle, glm::fvec3(1.0, 0.0, 0.0));
 }
 
 static void km_finger_move(SkeletalMesh::SkeletonModifier &modifier,
