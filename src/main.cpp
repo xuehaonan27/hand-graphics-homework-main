@@ -63,6 +63,16 @@ namespace SkeletalAnimation {
 static double last_mouse_x = 400, last_mouse_y = 400;
 static bool first_mouse = true;
 
+struct CameraState {
+    glm::vec3 position;
+    glm::quat orientation;
+    float fov;
+
+    CameraState() : position(0.0f), orientation(1.0f, 0.0f, 0.0f, 0.0f), fov(45.0f) {}
+    CameraState(const glm::vec3& pos, const glm::quat& orient, float f)
+        : position(pos), orientation(orient), fov(f) {}
+};
+
 // Quaterion controlled camera
 class QuaternionCamera {
 public:
@@ -189,6 +199,34 @@ public:
         updateVectors();
     }
 
+    CameraState getCurrentState() const {
+        return CameraState(position, orientation, fov);
+    }
+
+    void setState(const CameraState& state) {
+        position = state.position;
+        orientation = state.orientation;
+        targetOrientation = state.orientation;
+        fov = state.fov;
+        updateVectors();
+    }
+    
+    CameraState getTransitionState(const CameraState& start, const CameraState& end, float progress) {
+        // Smooth step function for smoother transition
+        float smoothProgress = progress * progress * (3.0f - 2.0f * progress);
+        
+        // Linear interpolation for position
+        glm::vec3 transPosition = glm::mix(start.position, end.position, smoothProgress);
+        
+        // Spherical linear interpolation for orientation
+        glm::quat transOrientation = glm::slerp(start.orientation, end.orientation, smoothProgress);
+        
+        // Linear interpolation for FOV
+        float transFov = glm::mix(start.fov, end.fov, smoothProgress);
+        
+        return CameraState(transPosition, transOrientation, transFov);
+    }
+
 private:
     void updateVectors() {
         // Extra orientation vector from quaterion
@@ -210,6 +248,15 @@ private:
 };
 
 static QuaternionCamera camera;
+
+static CameraState stateA, stateB;
+static bool stateARecorded = false;
+static bool stateBRecorded = false;
+static bool isTransitioning = false;
+static CameraState transitionStart, transitionEnd;
+static float transitionProgress = 0.0f;
+static float transitionDuration = 3.0f; // NOTE: here
+static bool reverseTransition = false;
 
 enum DisplayMode {
     KeyboardMouseControl = 0,
@@ -278,6 +325,60 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
                 break;
             case GLFW_KEY_Q:
                 camera.decMovementSpeed();
+                break;
+            case GLFW_KEY_G:
+                // Record camera state A or B
+                if (!stateARecorded) {
+                    stateA = camera.getCurrentState();
+                    stateARecorded = true;
+                    std::cout << "State A recorded at position: ["
+                          << stateA.position.x << ", "
+                          << stateA.position.y << ", "
+                          << stateA.position.z << "]" << std::endl;
+                } else if (!stateBRecorded) {
+                    stateB = camera.getCurrentState();
+                    stateBRecorded = true;
+                    std::cout << "State B recorded at position: ["
+                            << stateB.position.x << ", "
+                            << stateB.position.y << ", "
+                            << stateB.position.z << "]" << std::endl;
+                    std::cout << "Both states recorded. Press P for A->B transition, O for B->A transition." << std::endl;
+                } else {
+                    std::cout << "Both states already recorded. Press K to clear." << std::endl;
+                }
+                break;
+            case GLFW_KEY_P:
+                // Play transition from A to B
+                if (stateARecorded && stateBRecorded) {
+                    isTransitioning = true;
+                    transitionStart = stateA;
+                    transitionEnd = stateB;
+                    transitionProgress = 0.0f;
+                    reverseTransition = false;
+                    std::cout << "Starting transition from A to B" << std::endl;
+                } else {
+                    std::cout << "Please record both states A and B first (press G twice)" << std::endl;
+                }
+                break;
+            case GLFW_KEY_O:
+                // Play transition from B to A
+                if (stateARecorded && stateBRecorded) {
+                    isTransitioning = true;
+                    transitionStart = stateB;
+                    transitionEnd = stateA;
+                    transitionProgress = 0.0f;
+                    reverseTransition = true;
+                    std::cout << "Starting transition from B to A" << std::endl;
+                } else {
+                    std::cout << "Please record both states A and B first (press G twice)" << std::endl;
+                }
+                break;
+            case GLFW_KEY_K:
+                // Clear recorded states
+                stateARecorded = false;
+                stateBRecorded = false;
+                isTransitioning = false;
+                std::cout << "Cleared recorded camera states" << std::endl;
                 break;
             case GLFW_KEY_Z:
                 thumb_bent = !thumb_bent;
@@ -405,6 +506,11 @@ int main(int argc, char *argv[]) {
     std::cout << "  Scroll: Zoom in/out" << std::endl;
     std::cout << "  Q/E: Adjust movement speed" << std::endl;
     std::cout << "  Z/X/C/V/B: Control fingers" << std::endl;
+    std::cout << "=== Transition Controls (when camera control mode enabled) ===" << std::endl;
+    std::cout << "  G: Record camera state (first press for A, second for B)" << std::endl;
+    std::cout << "  P: Play transition from A to B" << std::endl;
+    std::cout << "  O: Play transition from B to A" << std::endl;
+    std::cout << "  K: Clear recorded states" << std::endl;
     std::cout << "======================\n" << std::endl;
 
     static int ticked_time_sec = 0;
@@ -431,17 +537,31 @@ int main(int argc, char *argv[]) {
         // // Smooth quaternion interpolation (SLERP)
         // camera_orientation = glm::slerp(camera_orientation, target_orientation, slerp_factor);
         
-        camera.processKeyboard(
-            glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS,
-            glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS,
-            delta_time
-        );
-
-        camera.updateCameraOrientation(delta_time);
+        if (isTransitioning) {
+            transitionProgress += delta_time / transitionDuration;
+            if (transitionProgress >= 1.0f) {
+                // Transition complete
+                transitionProgress = 1.0f;
+                isTransitioning = false;
+                camera.setState(transitionEnd);
+                std::cout << "Transition complete" << std::endl;
+            } else {
+                // Update camera during transition
+                CameraState currentState = camera.getTransitionState(transitionStart, transitionEnd, transitionProgress);
+                camera.setState(currentState);
+            }
+        } else {
+            camera.processKeyboard(
+                glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS,
+                glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS,
+                delta_time
+            );
+            camera.updateCameraOrientation(delta_time);
+        }
 
         // Example: Rotate the hand
         // * turn around every 4 seconds
